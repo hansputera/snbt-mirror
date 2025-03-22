@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
     const url = new URL(request.url);
 
     const path = url.searchParams.get('p') ?? url.pathname;
-    const paths = path.split('/').slice(path.startsWith('/api') ? 2 : 1); // -> ['jwt', ...nested path]
+    const paths = path.split('/').filter(n => n.length).slice(path.startsWith('/api') ? 2 : 1); // -> ['jwt', ...nested path]
     const [token, ...nestedPaths] = paths;
 
     if (!token.length || !nestedPaths.length) {
@@ -21,8 +21,17 @@ export async function GET(request: NextRequest) {
         const dataOnDatabase = await getSnbtData(nestedPaths.join('/'));
         if (!dataOnDatabase) {
             const data = jwt.verify(token, process.env.JWT_SECRET!, jwtOptions.verify) as Deadlinejs;
-            const response = await fetch(new URL(`./${nestedPaths.join('/')}`, data.snbtDataUrl));
-            const json = await response.json();
+            const response = await fetch(`${data.snbtDataUrl}/${nestedPaths.join('/')}`);
+            const contentType = response.headers.get('content-type');
+
+            if (contentType === 'image/png') {
+                return new Response(await response.blob());
+            }
+
+            const json = await response.json().catch(() => undefined);
+            if (!json) {
+                return new Response(null, { status: 404 });
+            }
 
             await storeSnbtData({
                 key: nestedPaths.join('/'),
